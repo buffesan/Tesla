@@ -3,11 +3,11 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   speed: $('speed'), rpm: $('rpm'), rpmBar: $('rpmBar'), gear: $('gear'),
   gpsBadge: $('gpsBadge'), status: $('status'), accel: $('accel'), audioState: $('audioState'),
-  startBtn: $('startBtn'), gpsBtn: $('gpsBtn'), demoBtn: $('demoBtn'), stopBtn: $('stopBtn'),
+  startBtn: $('startBtn'), testBtn: $('testBtn'), gpsBtn: $('gpsBtn'), demoBtn: $('demoBtn'), stopBtn: $('stopBtn'),
   intensity: $('intensity'), intensityValue: $('intensityValue'),
   character: $('character'), characterValue: $('characterValue'),
   crackle: $('crackle'), crackleValue: $('crackleValue'),
-  demoPanel: $('demoPanel'), throttle: $('throttle')
+  demoPanel: $('demoPanel'), throttle: $('throttle'), audioCtxState: $('audioCtxState')
 };
 
 let watchId = null;
@@ -104,15 +104,28 @@ class V8EngineV2 {
     return this.ctx.createPeriodicWave(real, imag, {disableNormalization:false});
   }
 
+  async ensureRunning(){
+    if(!this.ctx) return false;
+    try{
+      if(this.ctx.state !== 'running') await this.ctx.resume();
+      ui.audioCtxState.textContent = this.ctx.state;
+      return this.ctx.state === 'running';
+    }catch(e){
+      ui.audioCtxState.textContent = 'Fehler';
+      return false;
+    }
+  }
+
   async start(){
     if(this.ctx){
-      await this.ctx.resume();
+      await this.ensureRunning();
       return;
     }
 
     const Ctx = window.AudioContext || window.webkitAudioContext;
     this.ctx = new Ctx({latencyHint:'interactive'});
     await this.ctx.resume();
+    ui.audioCtxState.textContent = this.ctx.state;
 
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.0001;
@@ -324,7 +337,38 @@ class V8EngineV2 {
       ctx.close();
       if(this.ctx === ctx) this.ctx = null;
       ui.audioState.textContent = 'Aus';
+      ui.audioCtxState.textContent = 'geschlossen';
     },180);
+  }
+
+  async testTone(){
+    if(!this.ctx){
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new Ctx({latencyHint:'interactive'});
+    }
+    await this.ensureRunning();
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440,t);
+    osc.frequency.exponentialRampToValueAtTime(880,t+0.45);
+
+    gain.gain.setValueAtTime(0.0001,t);
+    gain.gain.exponentialRampToValueAtTime(0.35,t+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001,t+0.65);
+
+    osc.connect(gain).connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t+0.7);
+
+    ui.audioState.textContent = 'TESTTON';
+    ui.status.textContent = 'Testton 440→880 Hz';
+    setTimeout(()=>{
+      if(!running) ui.audioState.textContent = 'Aus';
+    },800);
   }
 }
 
@@ -355,7 +399,9 @@ function updateModel(speedKmh, accel, throttle=null){
 
 async function startEngine(){
   await audio.start();
+  await audio.ensureRunning();
   running = true;
+  ui.startBtn.textContent = 'ENGINE RUNNING';
   ui.status.textContent = 'V8 Performance läuft';
 }
 
@@ -456,9 +502,13 @@ function stopAll(){
   current={speedKmh:0,accel:0,rpm:idleRpm,gear:0,throttle:0};
   render();
   ui.status.textContent='Gestoppt';
+  ui.startBtn.textContent='START ENGINE';
 }
 
 ui.startBtn.addEventListener('click',startEngine);
+ui.testBtn.addEventListener('click',async()=>{
+  await audio.testTone();
+});
 ui.gpsBtn.addEventListener('click',async()=>{
   if(!running) await startEngine();
   startGps();
