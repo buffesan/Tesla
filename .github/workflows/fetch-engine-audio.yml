@@ -16,13 +16,25 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Download and convert licensed source audio
+      - name: Install audio tools
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Download licensed source audio
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p assets
           curl -L --fail --retry 3 -A 'TeslaSoundLab/1.0 (https://github.com/buffesan/Tesla)' 'https://upload.wikimedia.org/wikipedia/commons/9/98/Maserati_GranTurismo_S_Exhaust.ogg' -o assets/maserati-granturismo-s.ogg
           test -s assets/maserati-granturismo-s.ogg
+          ls -lh assets/maserati-granturismo-s.ogg
+
+      - name: Convert source audio
+        shell: bash
+        run: |
+          set -euo pipefail
           ffmpeg -y -i assets/maserati-granturismo-s.ogg -codec:a libmp3lame -q:a 2 assets/maserati-granturismo-s.mp3
           ffmpeg -y -i assets/maserati-granturismo-s.ogg -ac 1 -ar 22050 -c:a pcm_s16le assets/maserati-source-mono.wav
 
@@ -32,6 +44,7 @@ jobs:
           set -euo pipefail
           ffprobe -v error -show_entries format=duration,size,bit_rate -of default=noprint_wrappers=1 assets/maserati-granturismo-s.ogg > assets/audio-info.txt
           python3 tools/build_engine_loops.py
+          cat assets/loops/loops.json
 
       - name: Commit audio assets
         shell: bash
