@@ -342,33 +342,44 @@ class V8EngineV2 {
   }
 
   async testTone(){
-    if(!this.ctx){
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new Ctx({latencyHint:'interactive'});
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const temp = !this.ctx;
+    const testCtx = this.ctx || new Ctx({latencyHint:'interactive'});
+
+    try{
+      if(testCtx.state !== 'running') await testCtx.resume();
+      ui.audioCtxState.textContent = testCtx.state;
+
+      const t = testCtx.currentTime;
+      const osc = testCtx.createOscillator();
+      const gain = testCtx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440,t);
+      osc.frequency.exponentialRampToValueAtTime(880,t+0.45);
+
+      gain.gain.setValueAtTime(0.0001,t);
+      gain.gain.exponentialRampToValueAtTime(0.35,t+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001,t+0.65);
+
+      osc.connect(gain).connect(testCtx.destination);
+      osc.start(t);
+      osc.stop(t+0.7);
+
+      ui.audioState.textContent = 'TESTTON';
+      ui.status.textContent = 'Testton 440→880 Hz';
+
+      setTimeout(async()=>{
+        if(!running) ui.audioState.textContent = 'Aus';
+        if(temp){
+          try{ await testCtx.close(); }catch(e){}
+          if(!running) ui.audioCtxState.textContent = 'geschlossen';
+        }
+      },800);
+    }catch(e){
+      ui.status.textContent = 'Audio-Fehler: ' + e.message;
+      ui.audioCtxState.textContent = 'Fehler';
     }
-    await this.ensureRunning();
-
-    const t = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(440,t);
-    osc.frequency.exponentialRampToValueAtTime(880,t+0.45);
-
-    gain.gain.setValueAtTime(0.0001,t);
-    gain.gain.exponentialRampToValueAtTime(0.35,t+0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001,t+0.65);
-
-    osc.connect(gain).connect(this.ctx.destination);
-    osc.start(t);
-    osc.stop(t+0.7);
-
-    ui.audioState.textContent = 'TESTTON';
-    ui.status.textContent = 'Testton 440→880 Hz';
-    setTimeout(()=>{
-      if(!running) ui.audioState.textContent = 'Aus';
-    },800);
   }
 }
 
