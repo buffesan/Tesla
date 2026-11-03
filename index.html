@@ -33,6 +33,7 @@
 
     <section class="controls card">
       <button id="startBtn" class="primary">START ENGINE</button>
+      <button id="testBtn">🔊 TEST SOUND</button>
       <button id="gpsBtn">GPS STARTEN</button>
       <button id="demoBtn">DEMO-MODUS</button>
       <button id="stopBtn" class="danger">STOP</button>
@@ -65,9 +66,10 @@
       <div><span>Status</span><strong id="status">Bereit</strong></div>
       <div><span>Beschleunigung</span><strong id="accel">0.00 m/s²</strong></div>
       <div><span>Audio</span><strong id="audioState">Aus</strong></div>
+      <div><span>AudioContext</span><strong id="audioCtxState">nicht gestartet</strong></div>
     </section>
 
-    <p class="note">V2: geschmeidigere GPS-Glättung, Lastwechsel, Schaltmomente und mehrschichtiger V8-Sound. Bedienung nur im Stand.</p>
+    <p class="note">Zum Handytst zuerst 🔊 TEST SOUND drücken. Wenn der Testton hörbar ist, funktioniert Safari-Audio. Bedienung im Auto nur im Stand.</p>
   </main>
   <script src="app.js"></script>
 </body>
