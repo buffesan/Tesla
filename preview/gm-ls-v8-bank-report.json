@@ -1,0 +1,191 @@
+{
+  "engineName": "GM LS V8",
+  "sourceEngineName": "GM LS",
+  "sampleRate": 48000,
+  "idleRpm": 900,
+  "rpmGrid": [
+    900.0,
+    1800.0,
+    2700.0,
+    3600.0,
+    4500.0,
+    5400.0,
+    6240.0
+  ],
+  "loadGrid": [
+    0.0,
+    0.5,
+    1.0
+  ],
+  "durationSeconds": 20.0,
+  "states": [
+    {
+      "rpm": 900.0,
+      "measuredRpm": 900.0,
+      "load": 0.0,
+      "loopScore": 0.968,
+      "seamError": 0.0,
+      "clip": "rpm_0900/load_000.wav"
+    },
+    {
+      "rpm": 900.0,
+      "measuredRpm": 900.0,
+      "load": 0.5,
+      "loopScore": 0.97699,
+      "seamError": 0.0004,
+      "clip": "rpm_0900/load_050.wav"
+    },
+    {
+      "rpm": 900.0,
+      "measuredRpm": 900.0,
+      "load": 1.0,
+      "loopScore": 0.97944,
+      "seamError": 0.00047,
+      "clip": "rpm_0900/load_100.wav"
+    },
+    {
+      "rpm": 1800.0,
+      "measuredRpm": 1800.0,
+      "load": 0.0,
+      "loopScore": 0.96377,
+      "seamError": 0.00246,
+      "clip": "rpm_1800/load_000.wav"
+    },
+    {
+      "rpm": 1800.0,
+      "measuredRpm": 1800.0,
+      "load": 0.5,
+      "loopScore": 0.97256,
+      "seamError": 0.0018,
+      "clip": "rpm_1800/load_050.wav"
+    },
+    {
+      "rpm": 1800.0,
+      "measuredRpm": 1800.0,
+      "load": 1.0,
+      "loopScore": 0.97682,
+      "seamError": 0.00156,
+      "clip": "rpm_1800/load_100.wav"
+    },
+    {
+      "rpm": 2700.0,
+      "measuredRpm": 2700.0,
+      "load": 0.0,
+      "loopScore": 0.96955,
+      "seamError": 0.0008,
+      "clip": "rpm_2700/load_000.wav"
+    },
+    {
+      "rpm": 2700.0,
+      "measuredRpm": 2700.0,
+      "load": 0.5,
+      "loopScore": 0.96861,
+      "seamError": 0.00049,
+      "clip": "rpm_2700/load_050.wav"
+    },
+    {
+      "rpm": 2700.0,
+      "measuredRpm": 2700.0,
+      "load": 1.0,
+      "loopScore": 0.96837,
+      "seamError": 0.00015,
+      "clip": "rpm_2700/load_100.wav"
+    },
+    {
+      "rpm": 3600.0,
+      "measuredRpm": 3600.0,
+      "load": 0.0,
+      "loopScore": 0.93512,
+      "seamError": 0.0,
+      "clip": "rpm_3600/load_000.wav"
+    },
+    {
+      "rpm": 3600.0,
+      "measuredRpm": 3600.0,
+      "load": 0.5,
+      "loopScore": 0.96859,
+      "seamError": 0.0,
+      "clip": "rpm_3600/load_050.wav"
+    },
+    {
+      "rpm": 3600.0,
+      "measuredRpm": 3600.0,
+      "load": 1.0,
+      "loopScore": 0.96481,
+      "seamError": 0.0,
+      "clip": "rpm_3600/load_100.wav"
+    },
+    {
+      "rpm": 4500.0,
+      "measuredRpm": 4500.0,
+      "load": 0.0,
+      "loopScore": 0.96449,
+      "seamError": 0.00187,
+      "clip": "rpm_4500/load_000.wav"
+    },
+    {
+      "rpm": 4500.0,
+      "measuredRpm": 4500.0,
+      "load": 0.5,
+      "loopScore": 0.97581,
+      "seamError": 0.0,
+      "clip": "rpm_4500/load_050.wav"
+    },
+    {
+      "rpm": 4500.0,
+      "measuredRpm": 4500.0,
+      "load": 1.0,
+      "loopScore": 0.97897,
+      "seamError": 0.0,
+      "clip": "rpm_4500/load_100.wav"
+    },
+    {
+      "rpm": 5400.0,
+      "measuredRpm": 5400.0,
+      "load": 0.0,
+      "loopScore": 0.93816,
+      "seamError": 0.0027,
+      "clip": "rpm_5400/load_000.wav"
+    },
+    {
+      "rpm": 5400.0,
+      "measuredRpm": 5400.0,
+      "load": 0.5,
+      "loopScore": 0.96208,
+      "seamError": 0.0,
+      "clip": "rpm_5400/load_050.wav"
+    },
+    {
+      "rpm": 5400.0,
+      "measuredRpm": 5400.0,
+      "load": 1.0,
+      "loopScore": 0.96551,
+      "seamError": 0.0,
+      "clip": "rpm_5400/load_100.wav"
+    },
+    {
+      "rpm": 6240.0,
+      "measuredRpm": 6240.0,
+      "load": 0.0,
+      "loopScore": 0.96081,
+      "seamError": 0.0,
+      "clip": "rpm_6240/load_000.wav"
+    },
+    {
+      "rpm": 6240.0,
+      "measuredRpm": 6240.0,
+      "load": 0.5,
+      "loopScore": 0.9701,
+      "seamError": 3e-05,
+      "clip": "rpm_6240/load_050.wav"
+    },
+    {
+      "rpm": 6240.0,
+      "measuredRpm": 6240.0,
+      "load": 1.0,
+      "loopScore": 0.97353,
+      "seamError": 0.00183,
+      "clip": "rpm_6240/load_100.wav"
+    }
+  ]
+}
