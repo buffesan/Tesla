@@ -1,22 +1,31 @@
-# Model Y Sound Lab V3
+# Model Y Sound Lab V4
 
-Static browser prototype for a Tesla Model Y Performance-style engine sound.
+Browser-based engine-sound prototype for a Tesla Model Y Performance.
 
-## V3 audio engine
+## V4: real recorded V8 audio
 
-V3 replaces the simple oscillator-based V8 with a multi-layer loop-bank engine:
+V4 replaces the synthetic V3 engine with a real recorded V8 sample bank.
 
-- four RPM anchor banks (idle / mid / pull / high)
-- separate cruise and load loops
-- continuous crossfading between RPM ranges
+The source recording is:
+
+- **“Maserati GranTurismo S Exhaust”**
+- Author: **lmartins**
+- Source: https://commons.wikimedia.org/wiki/File:Maserati_GranTurismo_S_Exhaust.ogg
+- License: **Creative Commons Attribution 4.0 International (CC BY 4.0)**
+- License text: https://creativecommons.org/licenses/by/4.0/
+
+The source recording is modified for this project: analyzed, cut into RPM regions, normalized, looped and dynamically pitch-shifted/crossfaded in the browser.
+
+No Maserati logo or endorsement is implied.
+
+## Audio architecture
+
+- four automatically extracted real-engine RPM loops
+- crossfade between neighboring RPM ranges
 - playback-rate tracking for simulated RPM
-- intake-noise layer
-- short exhaust impulse response for body/resonance
-- shift cut + exhaust pop
-- overrun crackle
-- iOS `navigator.audioSession = playback` support when available
-
-The loop material is generated locally in the browser; no third-party engine recordings are included.
+- load-dependent filtering and gain
+- shift cut between simulated gears
+- iOS `navigator.audioSession = playback` support where available
 
 ## Run locally
 
@@ -28,10 +37,10 @@ Then open `http://localhost:8080`.
 
 ## Tesla use
 
-Deploy over HTTPS (GitHub Pages is enabled for this repository), open the site in the Tesla browser, press **START ENGINE**, then **GPS STARTEN** and allow location access.
+The repository is deployed through GitHub Pages. Open the HTTPS page in the Tesla browser, press **START ENGINE**, then **GPS STARTEN** and allow location access.
 
 ## Notes
 
 - GPS speed depends on browser/device support and update rate.
 - Audio begins only after a user gesture because of browser autoplay restrictions.
-- This is a simulation. It does not read Tesla vehicle CAN data or accelerator-pedal position.
+- This is a simulation. It does not read Tesla CAN data or accelerator-pedal position.
