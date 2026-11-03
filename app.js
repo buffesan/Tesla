@@ -26,7 +26,7 @@ let simTimer = null;
 let filteredSpeed = 0;
 let filteredAccel = 0;
 
-const idleRpm = 820;
+const idleRpm = 850;
 const redline = 6800;
 const gearRatios = [0, 3.15, 2.08, 1.50, 1.17, 0.94, 0.78];
 const finalDrive = 3.10;
@@ -55,7 +55,7 @@ function chooseGear(speedKmh, accel, previousGear){
 
 function calculateRpm(speedKmh, gear, accel){
   if(gear === 0){
-    const idleLoad = clamp(Math.max(accel,0)*70, 0, 220);
+    const idleLoad = clamp(Math.max(accel,0)*75, 0, 260);
     return idleRpm + idleLoad;
   }
 
@@ -63,59 +63,49 @@ function calculateRpm(speedKmh, gear, accel){
   const wheelRpm = (speedMps / wheelCircumferenceM) * 60;
   let rpm = wheelRpm * gearRatios[gear] * finalDrive;
 
-  rpm += clamp(accel,0,6) * 210;
+  rpm += clamp(accel,0,6) * 220;
   return clamp(rpm, idleRpm, redline);
 }
 
 function render(){
   ui.speed.textContent = Math.round(current.speedKmh);
   ui.rpm.textContent = Math.round(current.rpm);
-  ui.rpmBar.style.width = `${clamp((current.rpm/redline)*100, 4, 100)}%`;
+  ui.rpmBar.style.width = clamp((current.rpm/redline)*100, 4, 100) + '%';
   ui.gear.textContent = current.gear === 0 ? 'N' : current.gear;
-  ui.accel.textContent = `${current.accel.toFixed(2)} m/s²`;
+  ui.accel.textContent = current.accel.toFixed(2) + ' m/s²';
 }
 
-class V8EngineV2 {
+class V8EngineV3 {
   constructor(){
     this.ctx = null;
     this.master = null;
-    this.engineBus = null;
-    this.exhaustBus = null;
-    this.intakeBus = null;
-    this.lowShelf = null;
-    this.exhaustFilter = null;
+    this.shiftGain = null;
+    this.engineMix = null;
+    this.intakeGain = null;
     this.intakeFilter = null;
-    this.sources = [];
-    this.noise = null;
+    this.bodyFilter = null;
+    this.lowShelf = null;
+    this.dryGain = null;
+    this.wetGain = null;
+    this.loopLayers = [];
+    this.noiseSource = null;
+    this.noiseGain = null;
     this.lastAccel = 0;
     this.lastThrottle = 0;
-    this.idleLfo = null;
-    this.idleDepth = null;
     this.isShifting = false;
-  }
-
-  makeDistortion(amount=28){
-    const curve = new Float32Array(2048);
-    const k = amount;
-    for(let i=0;i<curve.length;i++){
-      const x = i * 2 / (curve.length - 1) - 1;
-      curve[i] = ((3+k)*x*20*Math.PI/180)/(Math.PI+k*Math.abs(x));
-    }
-    return curve;
-  }
-
-  makePeriodicWave(){
-    const real = new Float32Array(12);
-    const imag = new Float32Array(12);
-    imag[1]=1.00; imag[2]=0.46; imag[3]=0.29; imag[4]=0.18;
-    imag[5]=0.12; imag[6]=0.08; imag[7]=0.05; imag[8]=0.035;
-    imag[9]=0.025; imag[10]=0.018; imag[11]=0.012;
-    return this.ctx.createPeriodicWave(real, imag, {disableNormalization:false});
+    this.startedAt = 0;
+    this.anchors = [
+      { rpm: 900,  name: 'idle' },
+      { rpm: 2200, name: 'mid' },
+      { rpm: 4200, name: 'pull' },
+      { rpm: 6200, name: 'high' }
+    ];
   }
 
   async ensureRunning(){
     if(!this.ctx) return false;
     try{
+      forcePlaybackAudioSession();
       if(this.ctx.state !== 'running') await this.ctx.resume();
       ui.audioCtxState.textContent = this.ctx.state;
       return this.ctx.state === 'running';
@@ -123,6 +113,105 @@ class V8EngineV2 {
       ui.audioCtxState.textContent = 'Fehler';
       return false;
     }
+  }
+
+  makeLoopBuffer(baseRpm, loadAmount){
+    const sr = this.ctx.sampleRate;
+    const firingHz = baseRpm / 60 * 4;
+    const pulseCount = baseRpm < 1400 ? 96 : (baseRpm < 3500 ? 128 : 192);
+    const duration = pulseCount / firingHz;
+    const length = Math.max(2048, Math.floor(duration * sr));
+    const buffer = this.ctx.createBuffer(1, length, sr);
+    const out = buffer.getChannelData(0);
+
+    const pattern = loadAmount > 0.5
+      ? [1.00,0.78,0.93,0.72,1.06,0.80,0.95,0.74]
+      : [0.84,0.72,0.80,0.68,0.88,0.73,0.82,0.69];
+
+    let hpPrevX = 0;
+    let hpPrevY = 0;
+    const hpA = 0.996;
+
+    for(let i=0;i<length;i++){
+      const t = i / sr;
+      const cycle = t * firingHz;
+      const pulseIndex = Math.floor(cycle);
+      const p = cycle - pulseIndex;
+      const amp = pattern[pulseIndex % 8];
+      const bankSwing = 1 + 0.055 * Math.sin((pulseIndex % 8) / 8 * Math.PI * 2);
+
+      const attack = Math.exp(-p * (loadAmount > 0.5 ? 16 : 21));
+      const chamber =
+        Math.sin(Math.PI * 2 * (p * 0.82 + 0.06)) * 0.78 +
+        Math.sin(Math.PI * 2 * (p * 1.72 + 0.19)) * 0.34 +
+        Math.sin(Math.PI * 2 * (p * 3.45 + 0.41)) * 0.18 +
+        Math.sin(Math.PI * 2 * (p * 6.10 + 0.13)) * 0.07;
+
+      const exhaustPulse = amp * bankSwing * attack * chamber;
+      const body =
+        0.15 * Math.sin(Math.PI * 2 * (cycle / 2)) +
+        0.08 * Math.sin(Math.PI * 2 * (cycle / 4 + 0.17));
+      const valve = 0.025 * Math.sin(Math.PI * 2 * (p * 7.6 + (pulseIndex % 4) * 0.11));
+
+      let x = exhaustPulse * (0.74 + loadAmount * 0.38) + body + valve;
+      x = Math.tanh(x * (1.45 + loadAmount * 0.9));
+
+      const y = x - hpPrevX + hpA * hpPrevY;
+      hpPrevX = x;
+      hpPrevY = y;
+      out[i] = y * 0.52;
+    }
+
+    return buffer;
+  }
+
+  makeNoiseBuffer(seconds=2){
+    const len = Math.floor(this.ctx.sampleRate * seconds);
+    const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    let brown = 0;
+    for(let i=0;i<len;i++){
+      const white = Math.random()*2-1;
+      brown = (brown + white*0.035) / 1.035;
+      data[i] = brown * 2.1;
+    }
+    return buffer;
+  }
+
+  makeExhaustIR(){
+    const sr = this.ctx.sampleRate;
+    const len = Math.floor(sr * 0.075);
+    const buffer = this.ctx.createBuffer(1, len, sr);
+    const data = buffer.getChannelData(0);
+    for(let i=0;i<len;i++){
+      const t = i / sr;
+      const env = Math.exp(-t * 38);
+      const ring =
+        Math.sin(2*Math.PI*92*t) * 0.54 +
+        Math.sin(2*Math.PI*147*t + 0.7) * 0.30 +
+        Math.sin(2*Math.PI*225*t + 1.2) * 0.16;
+      data[i] = ring * env * 0.55;
+    }
+    data[0] += 0.7;
+    return buffer;
+  }
+
+  bankWeights(rpm){
+    const a = this.anchors;
+    if(rpm <= a[0].rpm) return [1,0,0,0];
+    if(rpm >= a[a.length-1].rpm) return [0,0,0,1];
+
+    const weights = [0,0,0,0];
+    for(let i=0;i<a.length-1;i++){
+      if(rpm >= a[i].rpm && rpm <= a[i+1].rpm){
+        const t = (rpm-a[i].rpm)/(a[i+1].rpm-a[i].rpm);
+        const smooth = t*t*(3-2*t);
+        weights[i] = 1-smooth;
+        weights[i+1] = smooth;
+        break;
+      }
+    }
+    return weights;
   }
 
   async start(){
@@ -136,133 +225,138 @@ class V8EngineV2 {
     this.ctx = new Ctx({latencyHint:'interactive'});
     await this.ctx.resume();
     ui.audioCtxState.textContent = this.ctx.state;
+    this.startedAt = this.ctx.currentTime;
+
+    this.engineMix = this.ctx.createGain();
+    this.engineMix.gain.value = 0.92;
+
+    const convolver = this.ctx.createConvolver();
+    convolver.buffer = this.makeExhaustIR();
+    convolver.normalize = true;
+
+    this.dryGain = this.ctx.createGain();
+    this.dryGain.gain.value = 0.86;
+    this.wetGain = this.ctx.createGain();
+    this.wetGain.gain.value = 0.22;
+
+    this.shiftGain = this.ctx.createGain();
+    this.shiftGain.gain.value = 1;
+
+    this.bodyFilter = this.ctx.createBiquadFilter();
+    this.bodyFilter.type = 'lowpass';
+    this.bodyFilter.frequency.value = 2200;
+    this.bodyFilter.Q.value = 0.58;
+
+    this.lowShelf = this.ctx.createBiquadFilter();
+    this.lowShelf.type = 'lowshelf';
+    this.lowShelf.frequency.value = 155;
+    this.lowShelf.gain.value = 6;
+
+    const compressor = this.ctx.createDynamicsCompressor();
+    compressor.threshold.value = -17;
+    compressor.knee.value = 16;
+    compressor.ratio.value = 4.5;
+    compressor.attack.value = 0.004;
+    compressor.release.value = 0.12;
 
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.0001;
 
-    const compressor = this.ctx.createDynamicsCompressor();
-    compressor.threshold.value = -16;
-    compressor.knee.value = 18;
-    compressor.ratio.value = 5;
-    compressor.attack.value = 0.004;
-    compressor.release.value = 0.14;
+    this.engineMix.connect(this.dryGain).connect(this.shiftGain);
+    this.engineMix.connect(convolver).connect(this.wetGain).connect(this.shiftGain);
+    this.shiftGain.connect(this.bodyFilter).connect(this.lowShelf).connect(compressor).connect(this.master).connect(this.ctx.destination);
 
-    this.lowShelf = this.ctx.createBiquadFilter();
-    this.lowShelf.type = 'lowshelf';
-    this.lowShelf.frequency.value = 150;
-    this.lowShelf.gain.value = 7;
+    this.loopLayers = [];
+    this.anchors.forEach((anchor, anchorIndex)=>{
+      [0,1].forEach(loadFamily=>{
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.makeLoopBuffer(anchor.rpm, loadFamily);
+        src.loop = true;
+        src.playbackRate.value = idleRpm / anchor.rpm;
 
-    this.engineBus = this.ctx.createGain();
-    this.exhaustBus = this.ctx.createGain();
-    this.intakeBus = this.ctx.createGain();
+        const gain = this.ctx.createGain();
+        gain.gain.value = 0.0001;
+        src.connect(gain).connect(this.engineMix);
+        src.start();
 
-    const saturator = this.ctx.createWaveShaper();
-    saturator.curve = this.makeDistortion(32);
-    saturator.oversample = '2x';
-
-    this.exhaustFilter = this.ctx.createBiquadFilter();
-    this.exhaustFilter.type = 'lowpass';
-    this.exhaustFilter.frequency.value = 1550;
-    this.exhaustFilter.Q.value = 0.65;
-
-    this.intakeFilter = this.ctx.createBiquadFilter();
-    this.intakeFilter.type = 'bandpass';
-    this.intakeFilter.frequency.value = 1250;
-    this.intakeFilter.Q.value = 0.85;
-
-    this.engineBus.connect(saturator).connect(this.exhaustFilter).connect(this.exhaustBus);
-    this.intakeBus.connect(this.intakeFilter);
-    this.exhaustBus.connect(this.lowShelf);
-    this.intakeFilter.connect(this.lowShelf);
-    this.lowShelf.connect(compressor).connect(this.master).connect(this.ctx.destination);
-
-    const wave = this.makePeriodicWave();
-    const layers = [
-      {mul:1.00, gain:0.28, detune:-4},
-      {mul:0.50, gain:0.12, detune:3},
-      {mul:2.00, gain:0.07, detune:-2},
-      {mul:1.50, gain:0.045, detune:5}
-    ];
-
-    layers.forEach(layer=>{
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.setPeriodicWave(wave);
-      osc.detune.value = layer.detune;
-      gain.gain.value = layer.gain;
-      osc.connect(gain).connect(this.engineBus);
-      osc.start();
-      this.sources.push({osc,gain,mul:layer.mul});
+        this.loopLayers.push({
+          src,
+          gain,
+          anchorIndex,
+          baseRpm: anchor.rpm,
+          loadFamily
+        });
+      });
     });
 
-    const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 2, this.ctx.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    let brown = 0;
-    for(let i=0;i<data.length;i++){
-      const white = Math.random()*2-1;
-      brown = (brown + 0.02*white) / 1.02;
-      data[i] = brown * 2.4;
-    }
-
     const noiseSrc = this.ctx.createBufferSource();
-    noiseSrc.buffer = noiseBuffer;
+    noiseSrc.buffer = this.makeNoiseBuffer();
     noiseSrc.loop = true;
-    const noiseGain = this.ctx.createGain();
-    noiseGain.gain.value = 0.02;
-    noiseSrc.connect(noiseGain).connect(this.intakeBus);
+    this.intakeFilter = this.ctx.createBiquadFilter();
+    this.intakeFilter.type = 'bandpass';
+    this.intakeFilter.frequency.value = 950;
+    this.intakeFilter.Q.value = 0.8;
+    this.noiseGain = this.ctx.createGain();
+    this.noiseGain.gain.value = 0.0001;
+    noiseSrc.connect(this.intakeFilter).connect(this.noiseGain).connect(this.shiftGain);
     noiseSrc.start();
-    this.noise = {src:noiseSrc,gain:noiseGain};
-
-    this.idleLfo = this.ctx.createOscillator();
-    this.idleLfo.type = 'sine';
-    this.idleLfo.frequency.value = 6.7;
-    this.idleDepth = this.ctx.createGain();
-    this.idleDepth.gain.value = 0.010;
-    this.idleLfo.connect(this.idleDepth).connect(this.master.gain);
-    this.idleLfo.start();
+    this.noiseSource = noiseSrc;
 
     const now = this.ctx.currentTime;
-    this.master.gain.setTargetAtTime(0.13, now, 0.06);
-    ui.audioState.textContent = 'V8 V2';
+    this.master.gain.setTargetAtTime(0.15, now, 0.07);
+    ui.audioState.textContent = 'V8 V3 · Loop-Bank';
   }
 
   setEngine(rpm, accel, throttle){
     if(!this.ctx) return;
 
     const now = this.ctx.currentTime;
-    const ignitionHz = Math.max(42, rpm/60 * 4);
     const throttleN = clamp(throttle/100,0,1);
     const accelLoad = clamp(Math.max(accel,0)/5.5,0,1);
-    const load = clamp(throttleN*0.68 + accelLoad*0.55, 0, 1.2);
+    const load = clamp(throttleN*0.72 + accelLoad*0.48, 0, 1);
+    const overrun = throttleN < 0.08 && accel < -0.25;
     const intensity = Number(ui.intensity.value)/100;
     const character = Number(ui.character.value)/100;
+    const rpmN = clamp((rpm-idleRpm)/(redline-idleRpm),0,1);
 
-    this.sources.forEach((s,i)=>{
-      const f = ignitionHz * s.mul;
-      s.osc.frequency.setTargetAtTime(f, now, 0.025);
-      const dynamic = [0.30,0.11,0.065,0.04][i] * (0.75 + load*0.5);
-      s.gain.gain.setTargetAtTime(dynamic, now, 0.05);
+    const idleLope = rpm < 1200
+      ? 1 + Math.sin((now-this.startedAt)*Math.PI*2*1.75)*0.012*(1-rpmN)
+      : 1;
+
+    const weights = this.bankWeights(rpm);
+    const loadMix = overrun ? 0.06 : clamp(0.08 + load*0.92, 0.05, 1);
+    const cruiseMix = 1 - loadMix*0.78;
+
+    this.loopLayers.forEach(layer=>{
+      const bankW = weights[layer.anchorIndex];
+      const familyW = layer.loadFamily ? loadMix : cruiseMix;
+      const gainTarget = Math.max(0.0001, bankW * familyW * (layer.loadFamily ? 0.27 : 0.22));
+      layer.gain.gain.setTargetAtTime(gainTarget, now, 0.055);
+
+      const rate = clamp((rpm / layer.baseRpm) * idleLope, 0.55, 1.85);
+      layer.src.playbackRate.setTargetAtTime(rate, now, 0.035);
     });
 
-    const rpmN = clamp((rpm-idleRpm)/(redline-idleRpm),0,1);
-    const body = 0.045 + load*0.105 + rpmN*0.025;
-    this.master.gain.setTargetAtTime(body * intensity, now, 0.045);
-
-    this.exhaustFilter.frequency.setTargetAtTime(
-      720 + rpmN*2000 + load*1100 + character*500,
-      now, 0.04
+    this.bodyFilter.frequency.setTargetAtTime(
+      1050 + rpmN*3200 + load*1050 + character*650,
+      now,
+      0.055
     );
+    this.bodyFilter.Q.setTargetAtTime(0.45 + character*0.5, now, 0.08);
+    this.lowShelf.gain.setTargetAtTime(4.5 + character*6.5 + load*1.5, now, 0.08);
+    this.wetGain.gain.setTargetAtTime(0.14 + character*0.17, now, 0.08);
 
-    this.exhaustFilter.Q.setTargetAtTime(0.5 + character*0.8, now, 0.05);
-    this.lowShelf.gain.setTargetAtTime(4 + character*7, now, 0.08);
-    this.intakeFilter.frequency.setTargetAtTime(850 + rpmN*2300, now, 0.05);
-    this.noise.gain.gain.setTargetAtTime(0.012 + load*0.052 + rpmN*0.012, now, 0.05);
-    this.idleDepth.gain.setTargetAtTime(rpm < 1200 ? 0.010*(1-rpmN) : 0.001, now, 0.08);
+    this.intakeFilter.frequency.setTargetAtTime(900 + rpmN*2550, now, 0.05);
+    this.intakeFilter.Q.setTargetAtTime(0.7 + load*0.55, now, 0.06);
+    this.noiseGain.gain.setTargetAtTime(0.006 + load*0.09 + rpmN*0.025, now, 0.05);
+
+    const level = (0.11 + load*0.075 + rpmN*0.025) * intensity;
+    this.master.gain.setTargetAtTime(level, now, 0.06);
 
     const throttleDrop = this.lastThrottle - throttle;
-    if((throttleDrop > 24 || (this.lastAccel > 1.1 && accel < -0.35)) &&
-       Math.random() < (Number(ui.crackle.value)/100)*0.8){
-      this.crackle(0.7 + rpmN*0.5);
+    const crackleChance = Number(ui.crackle.value)/100;
+    if((throttleDrop > 20 || (this.lastAccel > 1.0 && accel < -0.3)) && Math.random() < crackleChance*0.72){
+      this.crackle(0.65 + rpmN*0.65);
     }
 
     this.lastAccel = accel;
@@ -270,71 +364,74 @@ class V8EngineV2 {
   }
 
   shiftBlip(direction=1){
-    if(!this.ctx || !this.master || this.isShifting) return;
+    if(!this.ctx || !this.shiftGain || this.isShifting) return;
     this.isShifting = true;
 
     const t = this.ctx.currentTime;
-    const v = Math.max(this.master.gain.value, 0.04);
-    this.master.gain.cancelScheduledValues(t);
-    this.master.gain.setValueAtTime(v,t);
-    this.master.gain.linearRampToValueAtTime(v*0.28,t+0.035);
-    this.master.gain.linearRampToValueAtTime(v*0.72,t+0.095);
-    this.master.gain.linearRampToValueAtTime(v,t+0.17);
+    this.shiftGain.gain.cancelScheduledValues(t);
+    this.shiftGain.gain.setValueAtTime(1,t);
+    this.shiftGain.gain.linearRampToValueAtTime(0.28,t+0.032);
+    this.shiftGain.gain.linearRampToValueAtTime(0.70,t+0.085);
+    this.shiftGain.gain.linearRampToValueAtTime(1,t+0.16);
 
-    if(direction > 0) this.exhaustPop(0.045);
-    setTimeout(()=>{ this.isShifting=false; },180);
+    if(direction > 0) this.exhaustPop(0.075);
+    setTimeout(()=>{ this.isShifting=false; },175);
   }
 
-  exhaustPop(volume=0.05){
+  exhaustPop(volume=0.07){
     if(!this.ctx) return;
     const t = this.ctx.currentTime;
 
-    const osc = this.ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(95 + Math.random()*55,t);
-    osc.frequency.exponentialRampToValueAtTime(45,t+0.09);
+    const len = Math.floor(this.ctx.sampleRate * 0.11);
+    const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    let lp = 0;
+    for(let i=0;i<len;i++){
+      const env = Math.exp(-i/(len*0.20));
+      const n = Math.random()*2-1;
+      lp += (n-lp)*0.18;
+      data[i] = lp*env;
+    }
 
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 145 + Math.random()*110;
+    bp.Q.value = 0.75;
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(volume,t);
-    gain.gain.exponentialRampToValueAtTime(0.0001,t+0.11);
-
-    const lp = this.ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 650;
-
-    osc.connect(lp).connect(gain).connect(this.master);
-    osc.start(t);
-    osc.stop(t+0.12);
+    gain.gain.value = volume;
+    src.connect(bp).connect(gain).connect(this.shiftGain);
+    src.start(t);
   }
 
   crackle(strength=1){
     if(!this.ctx) return;
-    const count = 1 + (Math.random() < 0.35 ? 1 : 0);
+    const count = 1 + (Math.random() < 0.45 ? 1 : 0) + (Math.random() < 0.12 ? 1 : 0);
 
     for(let n=0;n<count;n++){
-      const delay = n*0.055 + Math.random()*0.025;
+      const delay = n*0.045 + Math.random()*0.03;
       const t = this.ctx.currentTime + delay;
-      const len = Math.floor(this.ctx.sampleRate*0.055);
+      const len = Math.floor(this.ctx.sampleRate*0.05);
       const buffer = this.ctx.createBuffer(1,len,this.ctx.sampleRate);
       const data = buffer.getChannelData(0);
+      let shaped = 0;
 
       for(let i=0;i<len;i++){
-        const env = Math.exp(-i/(len*0.18));
-        data[i] = (Math.random()*2-1)*env;
+        const env = Math.exp(-i/(len*0.17));
+        shaped += ((Math.random()*2-1)-shaped)*0.27;
+        data[i] = shaped*env;
       }
 
       const src = this.ctx.createBufferSource();
       src.buffer = buffer;
-
       const bp = this.ctx.createBiquadFilter();
       bp.type = 'bandpass';
-      bp.frequency.value = 180 + Math.random()*260;
-      bp.Q.value = 0.8;
-
+      bp.frequency.value = 180 + Math.random()*300;
+      bp.Q.value = 0.7;
       const gain = this.ctx.createGain();
-      gain.gain.value = 0.035 * strength;
-
-      src.connect(bp).connect(gain).connect(this.master);
+      gain.gain.value = 0.048 * strength;
+      src.connect(bp).connect(gain).connect(this.shiftGain);
       src.start(t);
     }
   }
@@ -342,13 +439,15 @@ class V8EngineV2 {
   stop(){
     if(!this.ctx) return;
     const ctx = this.ctx;
-    this.master.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.05);
+    this.master.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.045);
     setTimeout(()=>{
       ctx.close();
       if(this.ctx === ctx) this.ctx = null;
+      this.loopLayers = [];
+      this.noiseSource = null;
       ui.audioState.textContent = 'Aus';
       ui.audioCtxState.textContent = 'geschlossen';
-    },180);
+    },170);
   }
 
   async testTone(){
@@ -364,21 +463,18 @@ class V8EngineV2 {
       const t = testCtx.currentTime;
       const osc = testCtx.createOscillator();
       const gain = testCtx.createGain();
-
       osc.type = 'sine';
       osc.frequency.setValueAtTime(440,t);
       osc.frequency.exponentialRampToValueAtTime(880,t+0.45);
-
       gain.gain.setValueAtTime(0.0001,t);
-      gain.gain.exponentialRampToValueAtTime(0.35,t+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.28,t+0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001,t+0.65);
-
       osc.connect(gain).connect(testCtx.destination);
       osc.start(t);
       osc.stop(t+0.7);
 
       ui.audioState.textContent = 'TESTTON';
-      ui.status.textContent = 'Testton 440→880 Hz';
+      ui.status.textContent = 'Audiotest läuft';
 
       setTimeout(async()=>{
         if(!running) ui.audioState.textContent = 'Aus';
@@ -394,7 +490,7 @@ class V8EngineV2 {
   }
 }
 
-const audio = new V8EngineV2();
+const audio = new V8EngineV3();
 
 function updateModel(speedKmh, accel, throttle=null){
   filteredSpeed = lerp(filteredSpeed, Math.max(0,speedKmh), 0.34);
@@ -424,7 +520,7 @@ async function startEngine(){
   await audio.ensureRunning();
   running = true;
   ui.startBtn.textContent = 'ENGINE RUNNING';
-  ui.status.textContent = 'V8 Performance läuft';
+  ui.status.textContent = 'V8 V3 Loop-Engine läuft';
 }
 
 function startGps(){
@@ -471,11 +567,11 @@ function startGps(){
     ui.demoPanel.classList.add('hidden');
     ui.gpsBadge.textContent='GPS LIVE';
     ui.gpsBadge.classList.add('live');
-    ui.status.textContent=`GPS ±${Math.round(pos.coords.accuracy)} m`;
+    ui.status.textContent='GPS ±' + Math.round(pos.coords.accuracy) + ' m';
 
     updateModel(kmh,accel,inferredThrottle);
   },err=>{
-    ui.status.textContent=`GPS Fehler: ${err.message}`;
+    ui.status.textContent='GPS Fehler: ' + err.message;
     ui.gpsBadge.textContent='GPS FEHLER';
     ui.gpsBadge.classList.remove('live');
   },{
@@ -528,9 +624,7 @@ function stopAll(){
 }
 
 ui.startBtn.addEventListener('click',startEngine);
-ui.testBtn.addEventListener('click',async()=>{
-  await audio.testTone();
-});
+ui.testBtn.addEventListener('click',async()=>{ await audio.testTone(); });
 ui.gpsBtn.addEventListener('click',async()=>{
   if(!running) await startEngine();
   startGps();
@@ -542,13 +636,13 @@ ui.demoBtn.addEventListener('click',async()=>{
 ui.stopBtn.addEventListener('click',stopAll);
 
 ui.intensity.addEventListener('input',()=>{
-  ui.intensityValue.textContent=`${ui.intensity.value}%`;
+  ui.intensityValue.textContent=ui.intensity.value + '%';
 });
 ui.character.addEventListener('input',()=>{
-  ui.characterValue.textContent=`${ui.character.value}%`;
+  ui.characterValue.textContent=ui.character.value + '%';
 });
 ui.crackle.addEventListener('input',()=>{
-  ui.crackleValue.textContent=`${ui.crackle.value}%`;
+  ui.crackleValue.textContent=ui.crackle.value + '%';
 });
 
 document.querySelectorAll('[data-speed]').forEach(btn=>{
