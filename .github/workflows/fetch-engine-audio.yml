@@ -20,20 +20,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p assets
-          curl -L --fail --retry 3 -A 'TeslaSoundLab/1.0 (https://github.com/buffesan/Tesla)' 'https://upload.wikimedia.org/wikipedia/commons/9/98/Maserati_GranTurismo_S_Exhaust.ogg' -o assets/maserati-granturismo-s.ogg
+          UA='TeslaSoundLab/1.0 (https://github.com/buffesan/Tesla)'
+          curl -L --fail --retry 3 -A "$UA" 'https://upload.wikimedia.org/wikipedia/commons/9/98/Maserati_GranTurismo_S_Exhaust.ogg' -o assets/maserati-granturismo-s.ogg
           test -s assets/maserati-granturismo-s.ogg
+          curl -L --fail --retry 3 -A "$UA" 'https://upload.wikimedia.org/wikipedia/commons/transcoded/9/98/Maserati_GranTurismo_S_Exhaust.ogg/Maserati_GranTurismo_S_Exhaust.ogg.mp3' -o assets/maserati-granturismo-s.mp3 || rm -f assets/maserati-granturismo-s.mp3
           ls -lh assets/maserati-granturismo-s.ogg
+          if [ -f assets/maserati-granturismo-s.mp3 ]; then ls -lh assets/maserati-granturismo-s.mp3; fi
 
-      - name: Commit original CC BY 4.0 recording
+      - name: Commit original and compatible transcode
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add assets/maserati-granturismo-s.ogg
+          if [ -f assets/maserati-granturismo-s.mp3 ]; then git add assets/maserati-granturismo-s.mp3; fi
           if git diff --cached --quiet; then
             echo 'Audio source already present'
             exit 0
           fi
-          git commit -m 'Add CC BY 4.0 Maserati V8 source recording'
+          git commit -m 'Add browser-compatible CC BY 4.0 V8 audio'
           git push
