@@ -4,14 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b0d10" />
-  <title>Model Y Sound Lab</title>
+  <title>Model Y Sound Lab V2</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main class="app">
     <header class="topbar">
       <div>
-        <div class="eyebrow">MODEL Y PERFORMANCE</div>
+        <div class="eyebrow">MODEL Y PERFORMANCE · V2</div>
         <h1>Sound Lab</h1>
       </div>
       <div id="gpsBadge" class="badge">GPS AUS</div>
@@ -28,6 +28,7 @@
       <div class="gear-row">
         <span>GANG</span><strong id="gear">N</strong>
       </div>
+      <div class="engine-profile">V8 PERFORMANCE</div>
     </section>
 
     <section class="controls card">
@@ -38,11 +39,14 @@
     </section>
 
     <section class="card settings">
-      <label>Intensität <span id="intensityValue">70%</span>
-        <input id="intensity" type="range" min="0" max="100" value="70" />
+      <label>Intensität <span id="intensityValue">78%</span>
+        <input id="intensity" type="range" min="0" max="100" value="78" />
       </label>
-      <label>Crackle <span id="crackleValue">35%</span>
-        <input id="crackle" type="range" min="0" max="100" value="35" />
+      <label>Character <span id="characterValue">68%</span>
+        <input id="character" type="range" min="0" max="100" value="68" />
+      </label>
+      <label>Crackle <span id="crackleValue">30%</span>
+        <input id="crackle" type="range" min="0" max="100" value="30" />
       </label>
     </section>
 
@@ -63,7 +67,7 @@
       <div><span>Audio</span><strong id="audioState">Aus</strong></div>
     </section>
 
-    <p class="note">Nur verwenden, wenn die Bedienung während der Fahrt sicher und gesetzlich zulässig ist. GPS benötigt HTTPS oder localhost.</p>
+    <p class="note">V2: geschmeidigere GPS-Glättung, Lastwechsel, Schaltmomente und mehrschichtiger V8-Sound. Bedienung nur im Stand.</p>
   </main>
   <script src="app.js"></script>
 </body>
