@@ -101,17 +101,173 @@ class RealV8EngineV4 {
     }
   }
 
-  async loadAudioBuffer(url){
-    const res = await fetch(url + '?v=4', {cache:'no-store'});
-    if(!res.ok) throw new Error('Sample fehlt: ' + url + ' (' + res.status + ')');
+  async loadSourceBuffer(){
+    const url = 'assets/maserati-granturismo-s.ogg?v=4';
+    const res = await fetch(url, {cache:'no-store'});
+    if(!res.ok) throw new Error('Originalaufnahme noch nicht verfügbar (' + res.status + ')');
     const data = await res.arrayBuffer();
     return await this.ctx.decodeAudioData(data.slice(0));
   }
 
+  framePitchScore(ds, start, win, dsSr, targetRpm){
+    let mean = 0;
+    for(let i=0;i<win;i++) mean += ds[start+i];
+    mean /= win;
+
+    let energy = 0;
+    for(let i=0;i<win;i++){
+      const x = ds[start+i] - mean;
+      energy += x*x;
+    }
+    const level = Math.sqrt(energy / win);
+    if(level < 0.005) return null;
+
+    const f0 = targetRpm / 15;
+    const minF = Math.max(35, f0 * 0.76);
+    const maxF = Math.min(620, f0 * 1.24);
+    const minLag = Math.max(2, Math.floor(dsSr / maxF));
+    const maxLag = Math.max(minLag + 1, Math.floor(dsSr / minF));
+
+    let bestCorr = -2;
+    let bestLag = minLag;
+
+    for(let lag=minLag; lag<=maxLag; lag++){
+      let num=0, a2=0, b2=0;
+      const n=win-lag;
+      for(let i=0;i<n;i++){
+        const a=ds[start+i]-mean;
+        const b=ds[start+i+lag]-mean;
+        num += a*b;
+        a2 += a*a;
+        b2 += b*b;
+      }
+      const corr = num / (Math.sqrt(a2*b2) + 1e-12);
+      if(corr > bestCorr){
+        bestCorr = corr;
+        bestLag = lag;
+      }
+    }
+
+    const detectedRpm = 15 * dsSr / bestLag;
+    const closeness = Math.abs(Math.log(Math.max(detectedRpm,1) / targetRpm));
+    const score = bestCorr - 0.18*closeness + 0.018*Math.log(Math.max(level,1e-6));
+    return {score, corr:bestCorr, detectedRpm, level};
+  }
+
+  analyzeSource(buffer){
+    const source = buffer.getChannelData(0);
+    const srcSr = buffer.sampleRate;
+    const step = Math.max(1, Math.round(srcSr / 2205));
+    const dsSr = srcSr / step;
+    const ds = new Float32Array(Math.floor(source.length / step));
+
+    for(let i=0,j=0; j<ds.length; i+=step,j++) ds[j]=source[i];
+
+    const win = Math.floor(dsSr * 0.60);
+    const hop = Math.floor(dsSr * 0.22);
+    const startAt = Math.floor(dsSr * 4.0);
+    const stopAt = ds.length - win - Math.floor(dsSr * 1.0);
+    const targets = [
+      {name:'idle', rpm:900},
+      {name:'low', rpm:2200},
+      {name:'mid', rpm:3800},
+      {name:'high', rpm:6000}
+    ];
+
+    const used = [];
+    const selected = [];
+
+    for(const target of targets){
+      let best = null;
+      for(let pos=startAt; pos<stopAt; pos+=hop){
+        const time = pos / dsSr;
+        if(used.some(t=>Math.abs(t-time)<1.6)) continue;
+
+        const p = this.framePitchScore(ds,pos,win,dsSr,target.rpm);
+        if(!p) continue;
+        const candidate = {...p, time, name:target.name, targetRpm:target.rpm};
+        if(!best || candidate.score > best.score) best = candidate;
+      }
+
+      if(!best) throw new Error('Kein stabiler Bereich für ' + target.name + ' gefunden');
+      best.detectedRpm = clamp(best.detectedRpm, target.rpm*0.76, target.rpm*1.24);
+      used.push(best.time);
+      selected.push(best);
+    }
+
+    return selected;
+  }
+
+  nearestZeroCrossing(data, idx, radius){
+    const lo = Math.max(1, idx-radius);
+    const hi = Math.min(data.length-2, idx+radius);
+    let best=idx, bestScore=Infinity;
+
+    for(let i=lo;i<hi;i++){
+      const a=data[i-1], b=data[i];
+      if((a<=0 && b>0) || (a>=0 && b<0)){
+        const score=Math.abs(a)+Math.abs(b);
+        if(score<bestScore){ best=i; bestScore=score; }
+      }
+    }
+    return best;
+  }
+
+  extractLoop(sourceBuffer, info){
+    const sr = sourceBuffer.sampleRate;
+    const firingHz = Math.max(40, info.detectedRpm / 15);
+    const period = sr / firingHz;
+    const cycles = Math.max(8, Math.round((sr*1.10)/period));
+    const loopLen = Math.round(cycles*period);
+    const source0 = sourceBuffer.getChannelData(0);
+
+    let center = Math.round((info.time+0.30)*sr);
+    let startGuess = center - Math.floor(loopLen/2);
+    startGuess = clamp(startGuess, Math.round(sr*0.5), source0.length-loopLen-Math.round(sr*0.5));
+    const start = this.nearestZeroCrossing(source0,startGuess,Math.round(sr*0.025));
+    const end = Math.min(source0.length, start+loopLen);
+    const actualLen=end-start;
+
+    const channels = Math.max(1, sourceBuffer.numberOfChannels);
+    const out = this.ctx.createBuffer(channels, actualLen, sr);
+
+    let sumSq=0, peak=0;
+    for(let i=0;i<actualLen;i++){
+      const v=source0[start+i];
+      sumSq += v*v;
+      peak=Math.max(peak,Math.abs(v));
+    }
+    const rms=Math.sqrt(sumSq/Math.max(1,actualLen));
+    let norm=Math.min(3.0,0.19/Math.max(rms,1e-6));
+    if(peak*norm>0.94) norm=0.94/Math.max(peak,1e-6);
+
+    for(let ch=0; ch<channels; ch++){
+      const input=sourceBuffer.getChannelData(ch);
+      const output=out.getChannelData(ch);
+      for(let i=0;i<actualLen;i++) output[i]=input[start+i]*norm;
+    }
+
+    return out;
+  }
+
   async buildGraph(){
-    const manifestRes = await fetch('assets/loops/loops.json?v=4', {cache:'no-store'});
-    if(!manifestRes.ok) throw new Error('V4-Samplebank noch nicht verfügbar (' + manifestRes.status + ')');
-    this.manifest = await manifestRes.json();
+    ui.status.textContent = 'Lade echte V8-Aufnahme …';
+    const sourceBuffer = await this.loadSourceBuffer();
+    ui.status.textContent = 'Analysiere echte Drehzahlbereiche …';
+    const regions = this.analyzeSource(sourceBuffer);
+
+    this.manifest = {
+      source:'Maserati GranTurismo S Exhaust.ogg',
+      author:'lmartins',
+      license:'CC BY 4.0',
+      regions:regions.map(r=>({
+        name:r.name,
+        target_rpm:Math.round(r.targetRpm),
+        detected_rpm:Math.round(r.detectedRpm),
+        source_time_s:Number(r.time.toFixed(2)),
+        correlation:Number(r.corr.toFixed(3))
+      }))
+    };
 
     this.shiftGain = this.ctx.createGain();
     this.shiftGain.gain.value = 1;
@@ -138,30 +294,24 @@ class RealV8EngineV4 {
 
     this.shiftGain.connect(this.toneFilter).connect(this.lowShelf).connect(compressor).connect(this.master).connect(this.ctx.destination);
 
-    const decoded = await Promise.all(this.manifest.loops.map(async info => ({
-      info,
-      buffer: await this.loadAudioBuffer(info.file)
-    })));
+    this.layers = regions.map(info=>{
+      const buffer=this.extractLoop(sourceBuffer,info);
+      const src=this.ctx.createBufferSource();
+      src.buffer=buffer;
+      src.loop=true;
+      const gain=this.ctx.createGain();
+      gain.gain.value=0.0001;
+      src.connect(gain).connect(this.shiftGain);
+      src.start(0,Math.random()*Math.max(0.01,buffer.duration-0.02));
+      return {
+        src,
+        gain,
+        baseRpm:Number(info.detectedRpm || info.targetRpm || 1000),
+        name:info.name
+      };
+    }).sort((a,b)=>a.baseRpm-b.baseRpm);
 
-    this.layers = decoded
-      .map(({info,buffer}) => {
-        const src = this.ctx.createBufferSource();
-        src.buffer = buffer;
-        src.loop = true;
-        const gain = this.ctx.createGain();
-        gain.gain.value = 0.0001;
-        src.connect(gain).connect(this.shiftGain);
-        src.start(0, Math.random() * Math.max(0.01, buffer.duration - 0.02));
-        return {
-          src,
-          gain,
-          baseRpm: Number(info.detected_rpm || info.target_rpm || 1000),
-          name: info.name || 'sample'
-        };
-      })
-      .sort((a,b)=>a.baseRpm-b.baseRpm);
-
-    if(!this.layers.length) throw new Error('Keine V8-Loops geladen');
+    if(!this.layers.length) throw new Error('Keine V8-Loops erzeugt');
   }
 
   async start(){
