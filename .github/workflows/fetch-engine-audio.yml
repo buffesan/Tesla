@@ -15,15 +15,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Download licensed source audio
+      - name: Download and convert licensed source audio
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p assets
-          curl -L --fail --retry 3             'https://upload.wikimedia.org/wikipedia/commons/4/48/Maserati_GranTurismo_S_Exhaust.ogg'             -o assets/maserati-granturismo-s.ogg
-          curl -L --fail --retry 3             'https://upload.wikimedia.org/wikipedia/commons/transcoded/4/48/Maserati_GranTurismo_S_Exhaust.ogg/Maserati_GranTurismo_S_Exhaust.ogg.mp3'             -o assets/maserati-granturismo-s.mp3
+          curl -L --fail --retry 3             'https://commons.wikimedia.org/wiki/Special:Redirect/file/Maserati_GranTurismo_S_Exhaust.ogg'             -o assets/maserati-granturismo-s.ogg
           test -s assets/maserati-granturismo-s.ogg
-          test -s assets/maserati-granturismo-s.mp3
+          ffmpeg -y -i assets/maserati-granturismo-s.ogg             -codec:a libmp3lame -q:a 2 assets/maserati-granturismo-s.mp3
+
+      - name: Analyze recording
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffprobe -v error -show_entries format=duration,size,bit_rate             -of default=noprint_wrappers=1 assets/maserati-granturismo-s.ogg             > assets/audio-info.txt
+          ffmpeg -hide_banner -i assets/maserati-granturismo-s.ogg             -af "astats=metadata=1:reset=1,ametadata=print:file=assets/audio-levels.txt"             -f null - 2>/dev/null
 
       - name: Commit audio assets
         shell: bash
@@ -31,10 +37,10 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add assets/maserati-granturismo-s.ogg assets/maserati-granturismo-s.mp3
+          git add assets/maserati-granturismo-s.ogg                   assets/maserati-granturismo-s.mp3                   assets/audio-info.txt                   assets/audio-levels.txt
           if git diff --cached --quiet; then
             echo 'Audio assets already present'
             exit 0
           fi
-          git commit -m 'Add CC BY 4.0 Maserati source audio'
+          git commit -m 'Add CC BY 4.0 Maserati source audio and analysis'
           git push
