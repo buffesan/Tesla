@@ -1,0 +1,70 @@
+{
+  "source": "Ferrari California engine/exhaust recording",
+  "anchors": [
+    {
+      "time_s": 95.64,
+      "detected_rpm": 774,
+      "correlation": 0.855,
+      "drift_oct": 2e-05,
+      "quality": 0.855,
+      "loop_seconds": 1.0497,
+      "seam_score": 0.012679295090492815
+    },
+    {
+      "time_s": 21.0,
+      "detected_rpm": 1040,
+      "correlation": 0.8244,
+      "drift_oct": 0.00806,
+      "quality": 0.8099,
+      "loop_seconds": 1.0415,
+      "seam_score": 0.024935650122642983
+    },
+    {
+      "time_s": 13.08,
+      "detected_rpm": 2074,
+      "correlation": 0.9022,
+      "drift_oct": 0.00013,
+      "quality": 0.902,
+      "loop_seconds": 1.0444,
+      "seam_score": 0.0023549762167931476
+    },
+    {
+      "time_s": 11.64,
+      "detected_rpm": 2619,
+      "correlation": 0.7991,
+      "drift_oct": 0.00383,
+      "quality": 0.7922,
+      "loop_seconds": 1.0445,
+      "seam_score": 0.0018319465339118324
+    },
+    {
+      "time_s": 203.28,
+      "detected_rpm": 3111,
+      "correlation": 0.8054,
+      "drift_oct": 0.01358,
+      "quality": 0.7809,
+      "loop_seconds": 1.0444,
+      "seam_score": 0.032199072011280805
+    },
+    {
+      "time_s": 0.6,
+      "detected_rpm": 4783,
+      "correlation": 0.6945,
+      "drift_oct": 0.0012,
+      "quality": 0.6923,
+      "loop_seconds": 1.0459,
+      "seam_score": 0.0002941808094192311
+    },
+    {
+      "time_s": 81.84,
+      "detected_rpm": 7518,
+      "correlation": 0.7349,
+      "drift_oct": 0.0118,
+      "quality": 0.7137,
+      "loop_seconds": 1.0444,
+      "seam_score": 0.03600208353600465
+    }
+  ],
+  "candidate_count": 485,
+  "duration_s": 20.0
+}
