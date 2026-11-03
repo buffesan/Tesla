@@ -1,5 +1,14 @@
 const $ = (id) => document.getElementById(id);
 
+function forcePlaybackAudioSession(){
+  try{
+    if(navigator.audioSession){
+      navigator.audioSession.type = 'playback';
+    }
+  }catch(e){}
+}
+forcePlaybackAudioSession();
+
 const ui = {
   speed: $('speed'), rpm: $('rpm'), rpmBar: $('rpmBar'), gear: $('gear'),
   gpsBadge: $('gpsBadge'), status: $('status'), accel: $('accel'), audioState: $('audioState'),
@@ -117,6 +126,7 @@ class V8EngineV2 {
   }
 
   async start(){
+    forcePlaybackAudioSession();
     if(this.ctx){
       await this.ensureRunning();
       return;
@@ -342,6 +352,7 @@ class V8EngineV2 {
   }
 
   async testTone(){
+    forcePlaybackAudioSession();
     const Ctx = window.AudioContext || window.webkitAudioContext;
     const temp = !this.ctx;
     const testCtx = this.ctx || new Ctx({latencyHint:'interactive'});
