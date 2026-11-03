@@ -1,0 +1,138 @@
+name: Build GM LS V8 physics audio proof
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-engine-sim-v8-proof.yml'
+      - 'tools/render_engine_sim_preview.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-v8-bank:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out Tesla Sound Lab
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install preview renderer dependency
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Fetch pinned offline Engine Simulator bank generator
+        shell: pwsh
+        run: |
+          git clone https://github.com/Vangardo/engine-sim-unity-audio.git engine-bank-tool
+          Set-Location engine-bank-tool
+          git checkout 77080ca72765e72123038b916af9950e29793728
+
+      - name: Add pinned GM LS V8 preset
+        shell: pwsh
+        run: |
+          $url = 'https://raw.githubusercontent.com/ange-yaghi/engine-sim/85f7c3b959a908ed5232ede4f1a4ac7eafe6b630/assets/engines/atg-video-2/07_gm_ls.mr'
+          Invoke-WebRequest -Uri $url -OutFile 'engine-bank-tool/Presets/gm_ls_v8.mr'
+
+      - name: Configure RPM x load bank
+        shell: pwsh
+        run: |
+          @'
+          {
+            "schemaVersion": 1,
+            "sampleRate": 48000,
+            "rpmPoints": 7,
+            "loads": [0.0, 0.5, 1.0],
+            "stabilizeSeconds": 1.0,
+            "captureSeconds": 2.8,
+            "startup": {
+              "crankSeconds": 0.55,
+              "catchSeconds": 1.45,
+              "settleSeconds": 4.5
+            },
+            "engines": [
+              {
+                "moduleId": "gm_ls_v8",
+                "displayName": "GM LS V8",
+                "preset": "Presets/gm_ls_v8.mr",
+                "entry": "ls_v8",
+                "fallbackIdleRpm": 900,
+                "idleRpm": 900,
+                "rpms": [900, 1800, 2700, 3600, 4500, 5400, 6300]
+              }
+            ]
+          }
+          '@ | Set-Content -Encoding UTF8 'engine-bank-tool/gm-ls-bank.json'
+
+      - name: Build offline audio generator
+        shell: pwsh
+        working-directory: engine-bank-tool
+        run: ./Build-Generator.ps1 -CleanConfigure
+
+      - name: Probe GM LS V8
+        shell: pwsh
+        working-directory: engine-bank-tool
+        run: ./Generate-All.ps1 -Manifest ./gm-ls-bank.json -ModuleId gm_ls_v8 -ProbeOnly
+
+      - name: Generate 21 seamless RPM-load loops
+        shell: pwsh
+        working-directory: engine-bank-tool
+        run: ./Generate-All.ps1 -Manifest ./gm-ls-bank.json -OutputRoot ./GeneratedBanks -ModuleId gm_ls_v8
+
+      - name: Render standalone 20-second driving proof
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path preview | Out-Null
+          python tools/render_engine_sim_preview.py engine-bank-tool/GeneratedBanks/gm_ls_v8 preview/gm-ls-v8-physics-proof.wav preview/gm-ls-v8-bank-report.json
+          Copy-Item engine-bank-tool/GeneratedBanks/gm_ls_v8/EngineAudioBank.json preview/gm-ls-v8-bank-source.json
+
+      - name: Add credits
+        shell: pwsh
+        run: |
+          @'
+          # GM LS V8 physics-bank proof
+
+          This preview is deliberately separate from the Tesla Sound Lab app.
+
+          Audio is generated from the open-source Engine Simulator physics model
+          and converted into a 7 RPM x 3 load seamless-loop bank by
+          Vangardo's engine-sim-unity-audio generator.
+
+          Sources:
+          - Engine Simulator by AngeTheGreat / Ange Yaghi
+            https://github.com/ange-yaghi/engine-sim
+          - GM LS V8 preset:
+            assets/engines/atg-video-2/07_gm_ls.mr
+          - Offline bank generator by Vangardo:
+            https://github.com/Vangardo/engine-sim-unity-audio
+
+          Both codebases are MIT licensed.
+          No paid audio asset is used in this proof.
+          '@ | Set-Content -Encoding UTF8 preview/gm-ls-v8-CREDITS.md
+
+      - name: Convert proof to MP3
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          ffmpeg -y -hide_banner -loglevel error -i preview/gm-ls-v8-physics-proof.wav -c:a libmp3lame -b:a 256k preview/gm-ls-v8-physics-proof.mp3
+
+      - name: Commit proof only
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add preview/gm-ls-v8-physics-proof.wav preview/gm-ls-v8-physics-proof.mp3 preview/gm-ls-v8-bank-report.json preview/gm-ls-v8-bank-source.json preview/gm-ls-v8-CREDITS.md
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'Proof already current'
+            exit 0
+          }
+          git commit -m 'Add GM LS V8 physics-bank audio proof'
+          git push
