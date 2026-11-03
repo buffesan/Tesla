@@ -102,11 +102,24 @@ class RealV8EngineV4 {
   }
 
   async loadSourceBuffer(){
-    const url = 'assets/maserati-granturismo-s.ogg?v=4';
-    const res = await fetch(url, {cache:'no-store'});
-    if(!res.ok) throw new Error('Originalaufnahme noch nicht verfügbar (' + res.status + ')');
-    const data = await res.arrayBuffer();
-    return await this.ctx.decodeAudioData(data.slice(0));
+    const urls = [
+      'assets/maserati-granturismo-s.mp3?v=4',
+      'assets/maserati-granturismo-s.ogg?v=4'
+    ];
+    let lastError = null;
+
+    for(const url of urls){
+      try{
+        const res = await fetch(url, {cache:'no-store'});
+        if(!res.ok) continue;
+        const data = await res.arrayBuffer();
+        return await this.ctx.decodeAudioData(data.slice(0));
+      }catch(e){
+        lastError = e;
+      }
+    }
+
+    throw new Error('Echte Motoraufnahme konnte nicht geladen werden' + (lastError ? ': ' + lastError.message : ''));
   }
 
   framePitchScore(ds, start, win, dsSr, targetRpm){
