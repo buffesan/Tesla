@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/fetch-engine-audio.yml'
+      - 'tools/build_engine_loops.py'
 
 permissions:
   contents: write
@@ -23,24 +24,26 @@ jobs:
           curl -L --fail --retry 3             'https://commons.wikimedia.org/wiki/Special:Redirect/file/Maserati_GranTurismo_S_Exhaust.ogg'             -o assets/maserati-granturismo-s.ogg
           test -s assets/maserati-granturismo-s.ogg
           ffmpeg -y -i assets/maserati-granturismo-s.ogg             -codec:a libmp3lame -q:a 2 assets/maserati-granturismo-s.mp3
+          ffmpeg -y -i assets/maserati-granturismo-s.ogg             -ac 1 -ar 22050 -c:a pcm_s16le assets/maserati-source-mono.wav
 
-      - name: Analyze recording
+      - name: Analyze and build real engine loops
         shell: bash
         run: |
           set -euo pipefail
           ffprobe -v error -show_entries format=duration,size,bit_rate             -of default=noprint_wrappers=1 assets/maserati-granturismo-s.ogg             > assets/audio-info.txt
-          ffmpeg -hide_banner -i assets/maserati-granturismo-s.ogg             -af "astats=metadata=1:reset=1,ametadata=print:file=assets/audio-levels.txt"             -f null - 2>/dev/null
+          python3 tools/build_engine_loops.py
 
       - name: Commit audio assets
         shell: bash
         run: |
           set -euo pipefail
+          rm -f assets/maserati-source-mono.wav
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add assets/maserati-granturismo-s.ogg                   assets/maserati-granturismo-s.mp3                   assets/audio-info.txt                   assets/audio-levels.txt
+          git add assets/maserati-granturismo-s.ogg                   assets/maserati-granturismo-s.mp3                   assets/audio-info.txt                   assets/loops/idle.wav                   assets/loops/low.wav                   assets/loops/mid.wav                   assets/loops/high.wav                   assets/loops/loops.json
           if git diff --cached --quiet; then
             echo 'Audio assets already present'
             exit 0
           fi
-          git commit -m 'Add CC BY 4.0 Maserati source audio and analysis'
+          git commit -m 'Add real CC BY 4.0 Maserati V8 sample bank'
           git push
