@@ -1,4 +1,4 @@
-name: Build real single-source Ferrari V8 proof
+name: Build real single-source Ferrari V8 proofs
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
@@ -28,19 +28,31 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
 
-      - name: Download one real Ferrari California V8 recording
+      - name: Download two free real Ferrari V8 recordings
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p tmp preview
-          URL='https://upload.wikimedia.org/wikipedia/commons/9/98/Ferrari_California_-_engine_and_exhaust_sound_%28YouTube_nSDuWqypsNM%29.opus'
-          curl -L --fail --retry 3 -A 'TeslaSoundLab/1.0 (https://github.com/buffesan/Tesla)' "$URL" -o tmp/ferrari-california.opus
-          ffmpeg -y -hide_banner -loglevel error -i tmp/ferrari-california.opus -ac 1 -ar 48000 -c:a pcm_s16le tmp/ferrari-california.wav
+          UA='TeslaSoundLab/1.0 (https://github.com/buffesan/Tesla)'
 
-      - name: Find stable RPM regions and build seamless single-source proof
+          curl -L --fail --retry 3 -A "$UA"             'https://upload.wikimedia.org/wikipedia/commons/9/98/Ferrari_California_-_engine_and_exhaust_sound_%28YouTube_nSDuWqypsNM%29.opus'             -o tmp/ferrari-california.opus
+
+          curl -L --fail --retry 3 -A "$UA"             'https://upload.wikimedia.org/wikipedia/commons/4/4f/Ferrari_F8_Tributo_with_Fi_Exhaust_system_-_engine_and_exhaust_sound_%28YouTube_Qlx_Eay0xeM%29.opus'             -o tmp/ferrari-f8.opus
+
+          ffmpeg -y -hide_banner -loglevel error -i tmp/ferrari-california.opus -ac 1 -ar 48000 -c:a pcm_s16le tmp/ferrari-california.wav
+          ffmpeg -y -hide_banner -loglevel error -i tmp/ferrari-f8.opus -ac 1 -ar 48000 -c:a pcm_s16le tmp/ferrari-f8.wav
+
+      - name: Build Ferrari California proof
         run: |
-          python tools/real_v8_single_source_proof.py tmp/ferrari-california.wav preview/ferrari-california-v8-real-proof.wav preview/ferrari-california-v8-real-report.json
-          ffmpeg -y -hide_banner -loglevel error -i preview/ferrari-california-v8-real-proof.wav -c:a libmp3lame -b:a 256k preview/ferrari-california-v8-real-proof.mp3
+          python tools/real_v8_single_source_proof.py             tmp/ferrari-california.wav             preview/ferrari-california-v8-real-proof.wav             preview/ferrari-california-v8-real-report.json
+
+          ffmpeg -y -hide_banner -loglevel error             -i preview/ferrari-california-v8-real-proof.wav             -c:a libmp3lame -b:a 256k             preview/ferrari-california-v8-real-proof.mp3
+
+      - name: Build Ferrari F8 Tributo proof
+        run: |
+          python tools/real_v8_single_source_proof.py             tmp/ferrari-f8.wav             preview/ferrari-f8-v8-real-proof.wav             preview/ferrari-f8-v8-real-report.json
+
+          ffmpeg -y -hide_banner -loglevel error             -i preview/ferrari-f8-v8-real-proof.wav             -c:a libmp3lame -b:a 256k             preview/ferrari-f8-v8-real-proof.mp3
 
       - name: Add credits
         shell: bash
@@ -48,29 +60,45 @@ jobs:
           cat > preview/ferrari-california-v8-real-CREDITS.md <<'EOF'
           # Ferrari California V8 real-recording proof
 
-          This is a standalone technical audio proof. It is not yet used by the Tesla Sound Lab app.
-
           Source recording:
           - Ferrari California - engine and exhaust sound
           - Author: Karla CM
           - Wikimedia Commons:
             https://commons.wikimedia.org/wiki/File:Ferrari_California_-_engine_and_exhaust_sound_(YouTube_nSDuWqypsNM).opus
-          - Creative Commons Attribution 3.0 (YouTube CC licence at original publication)
+          - Creative Commons Attribution 3.0
 
           This proof is an adaptation: the recording is analyzed for stable engine-speed regions,
           cut into whole-cycle loop candidates, circular-crossfaded, pitch-limited and blended
-          across engine speed. The source remains one and the same vehicle recording throughout.
+          across engine speed. It is not yet used by the Tesla Sound Lab app.
           EOF
 
-      - name: Commit proof
+          cat > preview/ferrari-f8-v8-real-CREDITS.md <<'EOF'
+          # Ferrari F8 Tributo V8 real-recording proof
+
+          Source recording:
+          - Ferrari F8 Tributo with Fi Exhaust system - engine and exhaust sound
+          - Author: FiExhaust
+          - Wikimedia Commons:
+            https://commons.wikimedia.org/wiki/File:Ferrari_F8_Tributo_with_Fi_Exhaust_system_-_engine_and_exhaust_sound_(YouTube_Qlx_Eay0xeM).opus
+          - Creative Commons Attribution 3.0
+
+          This proof is an adaptation: the recording is analyzed for stable engine-speed regions,
+          cut into whole-cycle loop candidates, circular-crossfaded, pitch-limited and blended
+          across engine speed. It is not yet used by the Tesla Sound Lab app.
+          EOF
+
+      - name: Commit proofs
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add preview/ferrari-california-v8-real-proof.wav preview/ferrari-california-v8-real-proof.mp3 preview/ferrari-california-v8-real-report.json preview/ferrari-california-v8-real-CREDITS.md
+
+          git add             preview/ferrari-california-v8-real-proof.wav             preview/ferrari-california-v8-real-proof.mp3             preview/ferrari-california-v8-real-report.json             preview/ferrari-california-v8-real-CREDITS.md             preview/ferrari-f8-v8-real-proof.wav             preview/ferrari-f8-v8-real-proof.mp3             preview/ferrari-f8-v8-real-report.json             preview/ferrari-f8-v8-real-CREDITS.md
+
           if git diff --cached --quiet; then
-            echo 'Proof unchanged'
+            echo 'Proofs unchanged'
             exit 0
           fi
-          git commit -m 'Add real single-source Ferrari V8 audio proof'
+
+          git commit -m 'Add free single-source Ferrari V8 audio proofs'
           git push
