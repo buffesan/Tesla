@@ -1,0 +1,40 @@
+name: Fetch CC engine audio
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fetch-engine-audio.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-audio:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download licensed source audio
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          curl -L --fail --retry 3             'https://upload.wikimedia.org/wikipedia/commons/4/48/Maserati_GranTurismo_S_Exhaust.ogg'             -o assets/maserati-granturismo-s.ogg
+          curl -L --fail --retry 3             'https://upload.wikimedia.org/wikipedia/commons/transcoded/4/48/Maserati_GranTurismo_S_Exhaust.ogg/Maserati_GranTurismo_S_Exhaust.ogg.mp3'             -o assets/maserati-granturismo-s.mp3
+          test -s assets/maserati-granturismo-s.ogg
+          test -s assets/maserati-granturismo-s.mp3
+
+      - name: Commit audio assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add assets/maserati-granturismo-s.ogg assets/maserati-granturismo-s.mp3
+          if git diff --cached --quiet; then
+            echo 'Audio assets already present'
+            exit 0
+          fi
+          git commit -m 'Add CC BY 4.0 Maserati source audio'
+          git push
