@@ -1,0 +1,76 @@
+name: Build real single-source Ferrari V8 proof
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-real-v8-proof.yml'
+      - 'tools/real_v8_single_source_proof.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check numpy
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Download one real Ferrari California V8 recording
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp preview
+          URL='https://upload.wikimedia.org/wikipedia/commons/9/98/Ferrari_California_-_engine_and_exhaust_sound_%28YouTube_nSDuWqypsNM%29.opus'
+          curl -L --fail --retry 3 -A 'TeslaSoundLab/1.0 (https://github.com/buffesan/Tesla)' "$URL" -o tmp/ferrari-california.opus
+          ffmpeg -y -hide_banner -loglevel error -i tmp/ferrari-california.opus -ac 1 -ar 48000 -c:a pcm_s16le tmp/ferrari-california.wav
+
+      - name: Find stable RPM regions and build seamless single-source proof
+        run: |
+          python tools/real_v8_single_source_proof.py tmp/ferrari-california.wav preview/ferrari-california-v8-real-proof.wav preview/ferrari-california-v8-real-report.json
+          ffmpeg -y -hide_banner -loglevel error -i preview/ferrari-california-v8-real-proof.wav -c:a libmp3lame -b:a 256k preview/ferrari-california-v8-real-proof.mp3
+
+      - name: Add credits
+        shell: bash
+        run: |
+          cat > preview/ferrari-california-v8-real-CREDITS.md <<'EOF'
+          # Ferrari California V8 real-recording proof
+
+          This is a standalone technical audio proof. It is not yet used by the Tesla Sound Lab app.
+
+          Source recording:
+          - Ferrari California - engine and exhaust sound
+          - Author: Karla CM
+          - Wikimedia Commons:
+            https://commons.wikimedia.org/wiki/File:Ferrari_California_-_engine_and_exhaust_sound_(YouTube_nSDuWqypsNM).opus
+          - Creative Commons Attribution 3.0 (YouTube CC licence at original publication)
+
+          This proof is an adaptation: the recording is analyzed for stable engine-speed regions,
+          cut into whole-cycle loop candidates, circular-crossfaded, pitch-limited and blended
+          across engine speed. The source remains one and the same vehicle recording throughout.
+          EOF
+
+      - name: Commit proof
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add preview/ferrari-california-v8-real-proof.wav preview/ferrari-california-v8-real-proof.mp3 preview/ferrari-california-v8-real-report.json preview/ferrari-california-v8-real-CREDITS.md
+          if git diff --cached --quiet; then
+            echo 'Proof unchanged'
+            exit 0
+          fi
+          git commit -m 'Add real single-source Ferrari V8 audio proof'
+          git push
